@@ -91,6 +91,7 @@ def health_check():
     return "✅ Бот жив! Webhook активен.", 200
 
 # === ЗАПУСК ===
+# === ЗАПУСК ===
 if __name__ == "__main__":
     # Инициализация Telegram-приложения
     application = Application.builder().token(BOT_TOKEN).build()
@@ -100,8 +101,15 @@ if __name__ == "__main__":
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     if not WEBHOOK_URL:
         raise ValueError("❌ WEBHOOK_URL не задан! Добавьте его в Environment Variables.")
+
     print(f"✅ Устанавливаю webhook на URL: {WEBHOOK_URL}")
-    application.bot.set_webhook(url=WEBHOOK_URL)
+
+    async def set_webhook_async():
+        await application.bot.set_webhook(url=WEBHOOK_URL)
+
+    import asyncio
+    asyncio.run(set_webhook_async())
 
     # Запуск Flask-сервера
+    PORT = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=PORT)
