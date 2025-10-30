@@ -81,7 +81,11 @@ def telegram_webhook():
     if request.headers.get("content-type") == "application/json":
         json_data = request.get_json()
         update = Update.de_json(json_data, application.bot)
-        application.update_queue.put_nowait(update)
+        # Используем process_update вместо put_nowait в update_queue
+        # Это асинхронная функция, её нужно вызвать внутри asyncio.run() или в асинхронном контексте
+        # Flask роут должен быть синхронным, поэтому используем asyncio.run() для выполнения асинхронной операции
+        import asyncio
+        asyncio.run(application.process_update(update))
         return "OK", 200
     else:
         return "Invalid content type", 400
