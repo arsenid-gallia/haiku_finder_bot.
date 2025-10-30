@@ -63,77 +63,104 @@ def count_syllables(word):
         prev_vowel = is_vowel
     return max(1, count) # Минимум 1 слог
 
-# === ПОИСК ХОККУ В ЛЮБОМ ФОРМАТЕ ===
+# === ПОИСК ХОККУ В ЛЮБОМ ФОРМАТЕ (ГИБКАЯ ВЕРСИЯ С ОГРАНИЧЕНИЯМИ И ПРОВЕРКОЙ СТРОК) ===
 def is_haiku(text):
     """
-    Проверяет, является ли текст хокку (5-7-5 слогов) в любом формате.
-    Учитывает переносы строк и пунктуацию.
+    Проверяет, является ли текст "хокку" (имеет 17 слогов, которые можно разделить на 5-7-5).
+    Игнорирует пунктуацию, пробелы, регистр.
+    Ищет хокку в следующих форматах:
+    1. В виде 3 строк (разделённых \n), проверяя строгое и гибкое 5-7-5.
+    2. В виде подпоследовательности слов в одном тексте, проверяя гибкое 5-7-5.
     """
+
+    # === ОГРАНИЧЕНИЕ 1: Длина текста ===
+    if len(text) > 200:
+        return False
+
     # Разделяем текст на строки по символам новой строки
     lines = text.splitlines()
     # Убираем пустые строки и лишние пробелы
     lines = [line.strip() for line in lines if line.strip()]
 
-    # Если строк меньше 3, попробуем найти 5-7-5 в одной строке (как было раньше)
-    if len(lines) < 3:
-        # Объединяем все строки в одну и используем старую логику
-        combined_text = ' '.join(lines)
-        words = re.findall(r'[а-яА-ЯёЁ]+', combined_text)
-        if len(words) < 3:
-            return False
+    # === Проверка: Если строк 3, проверяем как 3 строки ===
+    if len(lines) == 3:
+        first_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[0]))
+        second_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[1]))
+        third_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[2]))
 
-        syllables = [count_syllables(w) for w in words]
-        n = len(syllables)
-
-        for i in range(n):
-            s1, j = 0, i
-            while j < n and s1 < 5:
-                s1 += syllables[j]
-                j += 1
-            if s1 != 5:
-                continue
-
-            s2, k = 0, j
-            while k < n and s2 < 7:
-                s2 += syllables[k]
-                k += 1
-            if s2 != 7:
-                continue
-
-            s3, l = 0, k
-            while l < n and s3 < 5:
-                s3 += syllables[l]
-                l += 1
-            if s3 == 5:
-                return True
-        return False
-
-    # Если строк 3 или больше, проверяем первую, вторую и третью строки
-    else:
-        # Берем первые три строки
-        first_line = lines[0]
-        second_line = lines[1]
-        third_line = lines[2]
-
-        # Подсчитываем слоги в каждой строке
-        first_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', first_line))
-        second_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', second_line))
-        third_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', third_line))
-
-        # Проверяем, равны ли они 5, 7, 5
-        if first_syllables == 5 and second_syllables == 7 and third_syllables == 5:
+        # Проверяем строгое соответствие 5-7-5
+        if first_line_syllables == 5 and second_line_syllables == 7 and third_line_syllables == 5:
+            print(f"✅ Найдено чёткое хокку из 3 строк: {first_line_syllables}-{second_line_syllables}-{third_line_syllables}")
             return True
 
-        # Гибкая проверка: допускаем отклонение +/- 1 слог
-        if (abs(first_syllables - 5) <= 1 and
-            abs(second_syllables - 7) <= 1 and
-            abs(third_syllables - 5) <= 1):
+        # Проверяем гибкое соответствие +/- 1 слог
+        if (abs(first_line_syllables - 5) <= 1 and
+            abs(second_line_syllables - 7) <= 1 and
+            abs(third_line_syllables - 5) <= 1):
+            print(f"✅ Найдено гибкое хокку из 3 строк: {first_line_syllables}-{second_line_syllables}-{third_line_syllables}")
             return True
 
-        # Дополнительно: если строк больше 3, можно проверить любые три подряд строки
-        # Но для простоты оставим пока только первые три
-
+    # === Проверка: Ищем подпоследовательность слов (старый алгоритм) ===
+    # Очищаем текст от лишних символов и разбиваем на слова (используем исходный текст, а не lines)
+    words = re.findall(r'[а-яА-ЯёЁ]+', text)
+    if len(words) < 3: # Нужно хотя бы 3 слова
         return False
+
+    # Подсчитываем слоги для каждого слова
+    syllables = [count_syllables(w) for w in words]
+    n = len(syllables)
+
+    # Перебираем все возможные начальные позиции для поиска хокку
+    for start in range(n):
+        total_syllables = 0
+        # Ищем первую часть (примерно 5 слогов)
+        i = start
+        while i < n and total_syllables < 6:
+            total_syllables += syllables[i]
+            i += 1
+        # Если первая часть слишком короткая или длинная, пропускаем
+        if total_syllables < 4 or total_syllables > 6:
+            continue
+
+        first_part_end = i - 1
+        first_part_syllables = total_syllables
+
+        # Ищем вторую часть (примерно 7 слогов)
+        total_syllables = 0
+        j = i
+        while j < n and total_syllables < 8:
+            total_syllables += syllables[j]
+            j += 1
+        # Если вторая часть слишком короткая или длинная, пропускаем
+        if total_syllables < 6 or total_syllables > 8:
+            continue
+
+        second_part_end = j - 1
+        second_part_syllables = total_syllables
+
+        # Ищем третью часть (примерно 5 слогов)
+        total_syllables = 0
+        k = j
+        while k < n and total_syllables < 6:
+            total_syllables += syllables[k]
+            k += 1
+        # Если третья часть слишком короткая или длинная, пропускаем
+        if total_syllables < 4 or total_syllables > 6:
+            continue
+
+        third_part_syllables = total_syllables
+
+        # === ОГРАНИЧЕНИЕ 2: Количество слов в найденном хокку ===
+        total_words_in_haiku = (first_part_end - start + 1) + (second_part_end - i + 1) + (k - j)
+        if total_words_in_haiku > 15:
+            continue
+
+        # Если нашли подходящую комбинацию, возвращаем True
+        print(f"✅ Найдено хокку в подпоследовательности: {first_part_syllables}-{second_part_syllables}-{third_part_syllables} слогов, {total_words_in_haiku} слов")
+        return True
+
+    # Если ничего не нашли ни в одном из форматов
+    return False
 
 # === ОБРАБОТЧИК СООБЩЕНИЙ ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
