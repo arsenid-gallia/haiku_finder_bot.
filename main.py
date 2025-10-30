@@ -100,6 +100,7 @@ if __name__ == "__main__":
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     if not WEBHOOK_URL:
         raise ValueError("❌ WEBHOOK_URL не задан! Добавьте его в Environment Variables.")
+    print(f"✅ Устанавливаю webhook на URL: {WEBHOOK_URL}")
     application.bot.set_webhook(url=WEBHOOK_URL)
 
     # Запуск Flask-сервера
