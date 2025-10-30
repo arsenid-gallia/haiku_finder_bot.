@@ -97,8 +97,10 @@ if __name__ == "__main__":
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Установка webhook
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
-    application.bot.set_webhook(url=WEBHOOK_URL)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+if not WEBHOOK_URL:
+    raise ValueError("❌ WEBHOOK_URL не задан! Добавьте его в Environment Variables.")
+application.bot.set_webhook(url=WEBHOOK_URL)
 
     # Запуск Flask-сервера
     app.run(host="0.0.0.0", port=PORT)
