@@ -1,10 +1,16 @@
 import os
 import re
 import random
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-# === ОТВЕТЫ БОТА ===
+# === НАСТРОЙКИ ===
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+WEBHOOK_PATH = "/webhook"
+PORT = int(os.environ.get("PORT", 10000))
+# Render сам задаёт PORT, но на всякий случай — дефолт 10000
+
 HAiku_RESPONSES = [
     "нифига ты самурай",
     "вот это хокку!",
@@ -36,7 +42,6 @@ def is_haiku(text):
     n = len(syllables)
 
     for i in range(n):
-        # Строка 1: 5 слогов
         s1, j = 0, i
         while j < n and s1 < 5:
             s1 += syllables[j]
@@ -44,7 +49,6 @@ def is_haiku(text):
         if s1 != 5:
             continue
 
-        # Строка 2: 7 слогов
         s2, k = 0, j
         while k < n and s2 < 7:
             s2 += syllables[k]
@@ -52,7 +56,6 @@ def is_haiku(text):
         if s2 != 7:
             continue
 
-        # Строка 3: 5 слогов
         s3, l = 0, k
         while l < n and s3 < 5:
             s3 += syllables[l]
@@ -61,23 +64,41 @@ def is_haiku(text):
             return True
     return False
 
-# === ОБРАБОТКА СООБЩЕНИЙ ===
+# === ОБРАБОТЧИК СООБЩЕНИЙ ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
-    if not msg or not msg.text:
-        return
-    if is_haiku(msg.text):
+    if msg and msg.text and is_haiku(msg.text):
         await msg.reply_text(random.choice(HAiku_RESPONSES))
 
-# === ЗАПУСК ===
-def main():
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise ValueError("❌ BOT_TOKEN не задан! Добавьте его в Secrets на Render.")
-    app = Application.builder().token(token).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("✅ Бот запущен и ищет хокку...")
-    app.run_polling()
+# === Flask-приложение ===
+app = Flask(__name__)
 
+# Глобальное приложение (для доступа в webhook)
+application = None
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def telegram_webhook():
+    if request.headers.get("content-type") == "application/json":
+        json_data = request.get_json()
+        update = Update.de_json(json_data, application.bot)
+        application.update_queue.put_nowait(update)
+        return "OK", 200
+    else:
+        return "Invalid content type", 400
+
+@app.route("/", methods=["GET"])
+def health_check():
+    return "✅ Бот жив! Webhook активен.", 200
+
+# === ЗАПУСК ===
 if __name__ == "__main__":
-    main()
+    # Инициализация Telegram-приложения
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Установка webhook
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
+    application.bot.set_webhook(url=WEBHOOK_URL)
+
+    # Запуск Flask-сервера
+    app.run(host="0.0.0.0", port=PORT)
