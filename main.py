@@ -2,7 +2,7 @@ import os
 import re
 import random
 import asyncio
-import threading
+import threading # Импортируем threading на уровне модуля
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request
 from telegram import Update
@@ -94,11 +94,9 @@ def telegram_webhook():
         coro = application.process_update(update)
 
         # Запускаем корутину в основном цикле событий из другого потока
-        # run_coroutine_threadsafe возвращает Future
         future = asyncio.run_coroutine_threadsafe(coro, main_loop)
         try:
             # Ждем завершения задачи (опционально, можно и не ждать, но 200 быстрее вернется)
-            # Устанавливаем таймаут, чтобы запрос не висел вечно, если что-то пошло не так
             future.result(timeout=10) # Таймаут 10 секунд
         except asyncio.TimeoutError:
             print("⚠️ Задача обработки обновления превысила таймаут.")
@@ -118,7 +116,7 @@ async def setup_and_run():
     global application, main_loop
     # Сохраняем текущий цикл событий (основной)
     main_loop = asyncio.get_running_loop()
-    print(f"✅ Основной цикл событий получен в потоке {threading.current_thread().name}.")
+    print(f"✅ Основной цикл событий получен в потоке {threading.current_thread().name}.") # Теперь threading доступен
 
     print(f"✅ Создаю и инициализирую Telegram Application...")
     application = PTBApplication.builder().token(BOT_TOKEN).build()
@@ -135,7 +133,7 @@ async def setup_and_run():
     print(f"✅ Telegram Application инициализировано и webhook установлен.")
 
     # Запуск Flask-сервера из асинхронной функции
-    import threading
+    # threading уже импортирован
     def run_flask():
         app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
 
