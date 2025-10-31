@@ -2,7 +2,7 @@ import os
 import re
 import random
 import asyncio
-import threading # Импортируем threading на уровне модуля
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request
 from telegram import Update
@@ -199,12 +199,12 @@ def telegram_webhook():
 def health_check():
     return "✅ Бот жив! Webhook активен.", 200
 
-# === Асинхронная функция для инициализации и запуска ===
-async def setup_and_run():
+# === Асинхронная функция для инициализации ===
+async def initialize_application():
     global application, main_loop
     # Сохраняем текущий цикл событий (основной)
     main_loop = asyncio.get_running_loop()
-    print(f"✅ Основной цикл событий получен в потоке {threading.current_thread().name}.") # Теперь threading доступен
+    print(f"✅ Основной цикл событий получен в потоке {threading.current_thread().name}.")
 
     print(f"✅ Создаю и инициализирую Telegram Application...")
     application = PTBApplication.builder().token(BOT_TOKEN).build()
@@ -220,29 +220,14 @@ async def setup_and_run():
     await application.initialize()
     print(f"✅ Telegram Application инициализировано и webhook установлен.")
 
-    # Запуск Flask-сервера из асинхронной функции
-    # threading уже импортирован
-    def run_flask():
-        app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
-
-    print(f"🚀 Запускаю Flask-сервер на порту {PORT}...")
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    print(f"✅ Flask-сервер запущен в отдельном потоке {flask_thread.name}.")
-
-    # Основной цикл asyncio должен продолжаться
-    try:
-        while True:
-            await asyncio.sleep(3600) # Спит 1 час
-    except KeyboardInterrupt:
-        print("\n🛑 Останавливаюсь...")
-    finally:
-        print("🛑 Останавливаю Telegram Application...")
-        await application.shutdown()
-        print("✅ Telegram Application остановлено.")
-
-
 # === ЗАПУСК ===
 if __name__ == "__main__":
-    asyncio.run(setup_and_run())
+    # Запускаем асинхронную инициализацию
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    # Запускаем инициализацию в фоне
+    loop.create_task(initialize_application())
+
+    # Запускаем Flask-сервер в основном потоке
+    print(f"🚀 Запускаю Flask-сервер на порту {PORT}...")
+    app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
