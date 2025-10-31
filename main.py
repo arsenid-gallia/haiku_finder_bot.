@@ -18,7 +18,7 @@ if not WEBHOOK_URL:
 
 # Глобальная переменная для хранения приложения PTB и цикла событий
 application = None
-main_loop = None # Будет хранить цикл событий из основного потока
+ptb_loop = None # Цикл событий для PTB (в отдельном потоке)
 
 # === ОТВЕТЫ НА ХОККУ ===
 HAiku_RESPONSES = [
@@ -176,13 +176,12 @@ app = Flask(__name__)
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def telegram_webhook():
-    print("🔄 [DEBUG] НАЧАЛО telegram_webhook") # Новый отладочный принт в самом начале
-    try: # Обернём весь роут в try-except
-        print("🔄 Получен запрос на /webhook")
+    print("🔄 [DEBUG] НАЧАЛО telegram_webhook (в потоке Flask)")
+    try:
         if request.headers.get("content-type") == "application/json":
             json_data = request.get_json()
             print(f"📥 Получены данные: {json_data}")
-            # Используем application.bot, которое теперь гарантированно инициализировано
+            # Используем application.bot, которое инициализировано в другом потоке
             # Проверим, не стало ли оно None вдруг
             if application is None or application.bot is None:
                  print("❌ [CRITICAL] application или application.bot is None!")
@@ -190,13 +189,13 @@ def telegram_webhook():
             update = Update.de_json(json_data, application.bot)
             print(f"📋 Создан объект Update: {update.effective_message.text if update.effective_message else 'No text'}")
 
-            # Создаём задачу для обработки обновления в основном цикле
+            # Создаём задачу для обработки обновления в основном цикле PTB
             coro = application.process_update(update)
             print("📋 Создана корутина для обработки")
 
-            # Запускаем корутину в основном цикле событий из другого потока
-            future = asyncio.run_coroutine_threadsafe(coro, main_loop)
-            print("📋 Корутина отправлена в цикл событий")
+            # Запускаем корутину в асинхронном цикле событий из *другого* потока (ptb_loop)
+            future = asyncio.run_coroutine_threadsafe(coro, ptb_loop)
+            print("📋 Корутина отправлена в цикл событий PTB")
             try:
                 # Ждем завершения задачи (опционально, можно и не ждать, но 200 быстрее вернется)
                 result = future.result(timeout=10) # Таймаут 10 секунд
@@ -206,7 +205,7 @@ def telegram_webhook():
             except Exception as e:
                 print(f"❌ Ошибка при обработке обновления в основном цикле: {e}")
                 import traceback
-                traceback.print_exc() # Печатаем стек вызова ошибки
+                traceback.print_exc()
 
             return "OK", 200
         else:
@@ -222,12 +221,12 @@ def telegram_webhook():
 def health_check():
     return "✅ Бот жив! Webhook активен.", 200
 
-# === Асинхронная функция для инициализации ===
-async def initialize_application():
-    global application, main_loop
-    # Сохраняем текущий цикл событий (основной)
-    main_loop = asyncio.get_running_loop()
-    print(f"✅ Основной цикл событий получен в потоке {threading.current_thread().name}.")
+# === Асинхронная функция для инициализации в отдельном потоке ===
+async def setup_and_run_ptb():
+    global application, ptb_loop
+    # Сохраняем текущий цикл событий (из потока PTB)
+    ptb_loop = asyncio.get_running_loop()
+    print(f"✅ Цикл событий PTB получен в потоке {threading.current_thread().name}.")
 
     print(f"✅ Создаю и инициализирую Telegram Application...")
     application = PTBApplication.builder().token(BOT_TOKEN).build()
@@ -243,17 +242,46 @@ async def initialize_application():
     await application.initialize()
     print(f"✅ Telegram Application инициализировано и webhook установлен.")
 
+    # Ждём бесконечно в этом цикле (в потоке PTB)
+    # Это позволяет циклу оставаться активным для обработки через run_coroutine_threadsafe
+    try:
+        while True:
+            await asyncio.sleep(3600) # Спит 1 час, затем снова спит
+    except KeyboardInterrupt:
+        print("\n🛑 Останавливаюсь из потока PTB...")
+    finally:
+        print("🛑 Останавливаю Telegram Application из потока PTB...")
+        await application.shutdown()
+        print("✅ Telegram Application остановлено из потока PTB.")
+
+
 # === ЗАПУСК ===
 if __name__ == "__main__":
-    # Создаём новый цикл событий
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Запускаем асинхронную настройку PTB в ОТДЕЛЬНОМ потоке
+    import threading
+    def run_ptb():
+        # Создаём новый цикл asyncio для потока PTB
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(setup_and_run_ptb())
+        finally:
+            loop.close()
 
-    # Инициализируем приложение синхронно (ждём завершения)
-    print("🚀 Инициализирую Telegram Application...")
-    loop.run_until_complete(initialize_application())
-    print("✅ Telegram Application инициализировано.")
+    print(f"🚀 Запускаю поток с Telegram Application...")
+    ptb_thread = threading.Thread(target=run_ptb, name="PTB_Thread")
+    ptb_thread.daemon = True # Важно: поток завершится, когда основной скрипт завершится
+    ptb_thread.start()
 
-    # Запускаем Flask-сервер в основном потоке (с тем же циклом)
-    print(f"🚀 Запускаю Flask-сервер на порту {PORT}...")
+    # Ждём короткое время, чтобы PTB инициализировалась
+    import time
+    time.sleep(2)
+
+    # Проверяем, инициализирована ли application
+    if application is None:
+        print("❌ [CRITICAL] Telegram Application не была инициализирована вовремя!")
+        exit(1)
+
+    # Запускаем Flask-сервер в основном потоке (после запуска потока PTB)
+    print(f"🚀 Запускаю Flask-сервер на порту {PORT} в основном потоке...")
     app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
