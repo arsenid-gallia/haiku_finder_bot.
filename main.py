@@ -53,21 +53,30 @@ def is_haiku(text):
     1. В виде 3 строк (разделённых \n), проверяя строгое и гибкое 5-7-5.
     2. В виде подпоследовательности слов в одном тексте, проверяя гибкое 5-7-5.
     """
-
+    print(f"🔍 Проверка текста на хокку: '{text[:30]}...'") # Добавить
     # === ОГРАНИЧЕНИЕ 1: Длина текста ===
     if len(text) > 200:
+        print("📏 Текст слишком длинный, пропускаем") # Добавить
         return False
 
     # Разделяем текст на строки по символам новой строки
     lines = text.splitlines()
     # Убираем пустые строки и лишние пробелы
     lines = [line.strip() for line in lines if line.strip()]
+    print(f"📝 Найдено строк: {len(lines)}") # Добавить
 
     # === Проверка: Если строк 3, проверяем как 3 строки ===
     if len(lines) == 3:
-        first_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[0]))
-        second_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[1]))
-        third_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[2]))
+        print("🔍 Проверка по схеме 3 строки") # Добавить
+        try: # Добавить try-except
+            first_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[0]))
+            second_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[1]))
+            third_line_syllables = sum(count_syllables(word) for word in re.findall(r'[а-яА-ЯёЁ]+', lines[2]))
+        except Exception as e:
+            print(f"❌ Ошибка при подсчёте слогов в строках: {e}") # Добавить
+            import traceback
+            traceback.print_exc() # Печатаем стек вызова ошибки
+            return False
 
         # Проверяем строгое соответствие 5-7-5
         if first_line_syllables == 5 and second_line_syllables == 7 and third_line_syllables == 5:
@@ -84,12 +93,15 @@ def is_haiku(text):
     # === Проверка: Ищем подпоследовательность слов (старый алгоритм) ===
     # Очищаем текст от лишних символов и разбиваем на слова (используем исходный текст, а не lines)
     words = re.findall(r'[а-яА-ЯёЁ]+', text)
+    print(f"🔍 Найдено слов для проверки подпоследовательности: {len(words)}") # Добавить
     if len(words) < 3: # Нужно хотя бы 3 слова
+        print("📏 Недостаточно слов для хокку") # Добавить
         return False
 
     # Подсчитываем слоги для каждого слова
     syllables = [count_syllables(w) for w in words]
     n = len(syllables)
+    print(f"🔍 Подсчитаны слоги, длина: {n}") # Добавить
 
     # Перебираем все возможные начальные позиции для поиска хокку
     for start in range(n):
@@ -140,41 +152,59 @@ def is_haiku(text):
         print(f"✅ Найдено хокку в подпоследовательности: {first_part_syllables}-{second_part_syllables}-{third_part_syllables} слогов, {total_words_in_haiku} слов")
         return True
 
+    print("❌ Хокку не найдено") # Добавить
     # Если ничего не нашли ни в одном из форматов
     return False
 
 # === ОБРАБОТЧИК СООБЩЕНИЙ ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"🔄 handle_message вызван для сообщения от {update.effective_message.from_user.first_name if update.effective_message.from_user else 'Unknown'}") # Добавить
     msg = update.effective_message
-    if msg and msg.text and is_haiku(msg.text):
-        print(f"✅ Найдено хокку от {msg.from_user.first_name if msg.from_user else 'Unknown'}: {msg.text[:50]}...")
-        await msg.reply_text(random.choice(HAiku_RESPONSES))
+    if msg and msg.text:
+        print(f"📄 Текст сообщения: {msg.text}") # Добавить
+        if is_haiku(msg.text):
+            print(f"✅ Найдено хокку от {msg.from_user.first_name if msg.from_user else 'Unknown'}: {msg.text[:50]}...") # Убрать дублирование
+            await msg.reply_text(random.choice(HAiku_RESPONSES))
+            print("📤 Отправлен ответ") # Добавить
+        else:
+            print("❌ Хокку не найдено") # Добавить
+    else:
+        print("⚠️ Обновление не содержит текстового сообщения") # Добавить
 
 # === Flask-приложение ===
 app = Flask(__name__)
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def telegram_webhook():
+    print("🔄 Получен запрос на /webhook") # Добавить
     if request.headers.get("content-type") == "application/json":
         json_data = request.get_json()
+        print(f"📥 Получены данные: {json_data}") # Добавить
         # Используем application.bot, которое теперь гарантированно инициализировано
         update = Update.de_json(json_data, application.bot)
+        print(f"📋 Создан объект Update: {update.effective_message.text if update.effective_message else 'No text'}") # Добавить
 
         # Создаём задачу для обработки обновления в основном цикле
         coro = application.process_update(update)
+        print("📋 Создана корутина для обработки") # Добавить
 
         # Запускаем корутину в основном цикле событий из другого потока
         future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+        print("📋 Корутина отправлена в цикл событий") # Добавить
         try:
             # Ждем завершения задачи (опционально, можно и не ждать, но 200 быстрее вернется)
-            future.result(timeout=10) # Таймаут 10 секунд
+            result = future.result(timeout=10) # Таймаут 10 секунд
+            print(f"✅ Обработка завершена, результат: {result}") # Добавить
         except asyncio.TimeoutError:
             print("⚠️ Задача обработки обновления превысила таймаут.")
         except Exception as e:
             print(f"❌ Ошибка при обработке обновления в основном цикле: {e}")
+            import traceback
+            traceback.print_exc() # Печатаем стек вызова ошибки
 
         return "OK", 200
     else:
+        print("❌ Неверный тип контента") # Добавить
         return "Invalid content type", 400
 
 @app.route("/", methods=["GET"])
