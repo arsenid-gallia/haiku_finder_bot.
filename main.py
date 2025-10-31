@@ -176,36 +176,47 @@ app = Flask(__name__)
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def telegram_webhook():
-    print("🔄 Получен запрос на /webhook") # Добавить
-    if request.headers.get("content-type") == "application/json":
-        json_data = request.get_json()
-        print(f"📥 Получены данные: {json_data}") # Добавить
-        # Используем application.bot, которое теперь гарантированно инициализировано
-        update = Update.de_json(json_data, application.bot)
-        print(f"📋 Создан объект Update: {update.effective_message.text if update.effective_message else 'No text'}") # Добавить
+    print("🔄 [DEBUG] НАЧАЛО telegram_webhook") # Новый отладочный принт в самом начале
+    try: # Обернём весь роут в try-except
+        print("🔄 Получен запрос на /webhook")
+        if request.headers.get("content-type") == "application/json":
+            json_data = request.get_json()
+            print(f"📥 Получены данные: {json_data}")
+            # Используем application.bot, которое теперь гарантированно инициализировано
+            # Проверим, не стало ли оно None вдруг
+            if application is None or application.bot is None:
+                 print("❌ [CRITICAL] application или application.bot is None!")
+                 return "Internal Server Error", 500
+            update = Update.de_json(json_data, application.bot)
+            print(f"📋 Создан объект Update: {update.effective_message.text if update.effective_message else 'No text'}")
 
-        # Создаём задачу для обработки обновления в основном цикле
-        coro = application.process_update(update)
-        print("📋 Создана корутина для обработки") # Добавить
+            # Создаём задачу для обработки обновления в основном цикле
+            coro = application.process_update(update)
+            print("📋 Создана корутина для обработки")
 
-        # Запускаем корутину в основном цикле событий из другого потока
-        future = asyncio.run_coroutine_threadsafe(coro, main_loop)
-        print("📋 Корутина отправлена в цикл событий") # Добавить
-        try:
-            # Ждем завершения задачи (опционально, можно и не ждать, но 200 быстрее вернется)
-            result = future.result(timeout=10) # Таймаут 10 секунд
-            print(f"✅ Обработка завершена, результат: {result}") # Добавить
-        except asyncio.TimeoutError:
-            print("⚠️ Задача обработки обновления превысила таймаут.")
-        except Exception as e:
-            print(f"❌ Ошибка при обработке обновления в основном цикле: {e}")
-            import traceback
-            traceback.print_exc() # Печатаем стек вызова ошибки
+            # Запускаем корутину в основном цикле событий из другого потока
+            future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+            print("📋 Корутина отправлена в цикл событий")
+            try:
+                # Ждем завершения задачи (опционально, можно и не ждать, но 200 быстрее вернется)
+                result = future.result(timeout=10) # Таймаут 10 секунд
+                print(f"✅ Обработка завершена, результат: {result}")
+            except asyncio.TimeoutError:
+                print("⚠️ Задача обработки обновления превысила таймаут.")
+            except Exception as e:
+                print(f"❌ Ошибка при обработке обновления в основном цикле: {e}")
+                import traceback
+                traceback.print_exc() # Печатаем стек вызова ошибки
 
-        return "OK", 200
-    else:
-        print("❌ Неверный тип контента") # Добавить
-        return "Invalid content type", 400
+            return "OK", 200
+        else:
+            print("❌ Неверный тип контента")
+            return "Invalid content type", 400
+    except Exception as e:
+        print(f"❌ [CRITICAL] Необработанная ошибка в telegram_webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        return "Internal Server Error", 500
 
 @app.route("/", methods=["GET"])
 def health_check():
